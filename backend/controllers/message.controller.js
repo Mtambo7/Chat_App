@@ -1,5 +1,7 @@
 import Convarsation from "../models/convarsation.model.js"; // Import the Convarsation model
 import Message from "../models/message.model.js"; // Import the Message model
+import { getReceiverSocketId, io } from "../socket/socket.js";
+
 
 // Controller to handle sending a message
 export const sendMessage = async (req, res) => {
@@ -39,6 +41,10 @@ export const sendMessage = async (req, res) => {
     // Save the updated conversation and the new message to the database in parallel
     await Promise.all([convarsation.save(), newMessage.save()]);
 
+    const receiverSocketId = getReceiverSocketId(receiverId);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("newMessage", newMessage);
+    }
     // Respond to the client with the newly created message, along with a 201 status code
     res.status(201).json(newMessage); // Return the message in the response body with a 201 status (created)
   } catch (error) {
@@ -49,32 +55,31 @@ export const sendMessage = async (req, res) => {
 };
 
 export const getMessages = async (req, res) => {
-    // Extract userToChatId from request params and senderId from the authenticated user
-    const {
-      params: { id: userToChatId }, // ID of the user to chat with (from the route)
-      user: { _id: senderId }, // ID of the authenticated user (sender)
-    } = req;
-  
-    try {
-      // Find the conversation that includes both the sender and the user they want to chat with
-      const convarsation = await Convarsation.findOne({
-        participants: { $all: [senderId, userToChatId] }, // Look for a conversation with both participants
-      }).populate("message"); // Populate the messages field with actual message data
-  
-      // If no conversation exists, return an empty array as response
-      if (!convarsation) {
-        return res.status(200).json([]); // No conversation, so respond with an empty array
-      }
-  
-      // Extract the messages from the conversation
-      const message = convarsation.message;
-      
-      // Respond with the messages in the conversation
-      res.status(200).json(message);
-    } catch (error) {
-      // If any error occurs, log the error and respond with a 500 internal server error
-      console.log("Error in getMessages controller", error.message); // Log the error message for debugging
-      res.status(500).json({ success: false, message: "Internal server error" }); // Send a 500 response with an error message
+  // Extract userToChatId from request params and senderId from the authenticated user
+  const {
+    params: { id: userToChatId }, // ID of the user to chat with (from the route)
+    user: { _id: senderId }, // ID of the authenticated user (sender)
+  } = req;
+
+  try {
+    // Find the conversation that includes both the sender and the user they want to chat with
+    const convarsation = await Convarsation.findOne({
+      participants: { $all: [senderId, userToChatId] }, // Look for a conversation with both participants
+    }).populate("message"); // Populate the messages field with actual message data
+
+    // If no conversation exists, return an empty array as response
+    if (!convarsation) {
+      return res.status(200).json([]); // No conversation, so respond with an empty array
     }
-  };
-  
+
+    // Extract the messages from the conversation
+    const message = convarsation.message;
+
+    // Respond with the messages in the conversation
+    res.status(200).json(message);
+  } catch (error) {
+    // If any error occurs, log the error and respond with a 500 internal server error
+    console.log("Error in getMessages controller", error.message); // Log the error message for debugging
+    res.status(500).json({ success: false, message: "Internal server error" }); // Send a 500 response with an error message
+  }
+};
